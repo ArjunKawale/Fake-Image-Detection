@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real/Fake Sentinel | Neural Image Forensics</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Laser scanner animation */
+        @keyframes scanline {
+            0% { top: 0%; opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { top: 96%; opacity: 0.8; }
+        }
+        .scanner-beam {
+            animation: scanline 1.4s ease-in-out infinite alternate;
+        }
+    </style>
+</head>
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+    <!-- Top Navigation / Telemetry Bar -->
+    <header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 py-4 sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="h-3 w-3 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_12px_#34d399]"></div>
+                <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                    REAL/FAKE<span class="text-indigo-400">SENTINEL</span>
+                    <span class="text-[11px] mono font-semibold tracking-wider uppercase px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">v2.1 DL</span>
+                </h1>
+            </div>
+            <div class="hidden sm:flex items-center space-x-4 mono text-xs text-slate-400">
+                <span class="px-3 py-1 rounded-full bg-slate-800/70 border border-slate-700/60">Backbone: <b class="text-slate-200">EfficientNet-B0</b></span>
+                <span class="px-3 py-1 rounded-full bg-slate-800/70 border border-slate-700/60">Val Acc: <b class="text-emerald-400">98.87%</b></span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-5xl mx-auto px-4 py-8 w-full flex-1 flex flex-col justify-center">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- Left Column: Image Upload & Preview (7 Cols) -->
+            <div class="lg:col-span-7 bg-slate-900/70 border border-slate-800/90 rounded-2xl p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mono">Input Stream</h2>
+                    <span id="fileMeta" class="text-xs mono text-slate-500">Awaiting specimen</span>
+                </div>
+
+                <!-- Dropzone / Image Container -->
+                <div id="dropzone" class="relative group border-2 border-dashed border-slate-700 hover:border-indigo-500/80 rounded-xl overflow-hidden transition-all duration-300 bg-slate-950/50 min-h-[340px] flex flex-col items-center justify-center cursor-pointer">
+                    <input type="file" id="imageInput" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer z-20" onchange="previewImage(event)">
+                    
+                    <!-- Placeholder UI -->
+                    <div id="dropPrompt" class="text-center p-6 transition-all duration-200">
+                        <div class="mx-auto w-14 h-14 mb-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
+                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <p class="text-sm font-medium text-slate-200 mb-1">Upload target face portrait</p>
+                        <p class="text-xs text-slate-500 mono">JPEG, PNG, WEBP (Max 10MB)</p>
+                    </div>
+
+                    <!-- Image Display Area -->
+                    <div id="previewContainer" class="hidden relative w-full h-[360px] flex items-center justify-center bg-black/60">
+                        <img id="imagePreview" class="max-h-full max-w-full object-contain" alt="Specimen Preview">
+                        
+                        <!-- Visual Scanner Overlay Line (active during classification) -->
+                        <div id="scannerOverlay" class="hidden absolute inset-0 pointer-events-none z-10">
+                            <div class="scanner-beam absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_#22d3ee]"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="grid grid-cols-3 gap-3 mt-5">
+                    <button type="button" onclick="resetForm()" class="col-span-1 px-4 py-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-xl text-xs font-semibold mono transition flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Clear
+                    </button>
+                    <button id="analyzeBtn" type="button" onclick="analyzeImage()" class="col-span-2 px-6 py-3 bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white rounded-xl text-xs uppercase tracking-wider font-bold mono shadow-lg shadow-indigo-500/25 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4 animate-spin hidden" id="btnSpinner" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                        <span id="btnText">Execute Inference</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Column: Inference Diagnostics & Results (5 Cols) -->
+            <div class="lg:col-span-5 flex flex-col space-y-6">
+
+                <!-- Primary Result Card -->
+                <div id="resultCard" class="bg-slate-900/70 border border-slate-800/90 rounded-2xl p-6 shadow-2xl backdrop-blur-xl transition-all duration-300">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-xs mono uppercase tracking-wider text-slate-400">Classification Status</span>
+                        <span id="inferenceLatency" class="text-xs mono text-slate-500">Latency: -- ms</span>
+                    </div>
+
+                    <div id="idleState" class="py-12 text-center text-slate-500">
+                        <svg class="w-10 h-10 mx-auto mb-3 opacity-30 stroke-current" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        <p class="text-xs mono">Upload an image and run inference to view feature diagnostics.</p>
+                    </div>
+
+                    <div id="activeResultState" class="hidden space-y-5">
+                        <!-- Verdict Badge -->
+                        <div id="verdictBadge" class="p-4 rounded-xl border flex items-center justify-between bg-slate-950/60">
+                            <div>
+                                <span class="text-[10px] mono uppercase tracking-wider block text-slate-400">Model Decision</span>
+                                <h3 id="verdictTitle" class="text-xl font-bold tracking-tight">Authentic Face</h3>
+                            </div>
+                            <div id="verdictIcon" class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg">
+                                ✓
+                            </div>
+                        </div>
+
+                        <!-- Confidence Gauge Progress -->
+                        <div>
+                            <div class="flex justify-between items-baseline mb-2">
+                                <span class="text-xs mono text-slate-400">Confidence Level</span>
+                                <span id="confidenceValue" class="text-lg font-bold mono text-white">0.00%</span>
+                            </div>
+                            <div class="w-full bg-slate-950 rounded-full h-3 p-0.5 border border-slate-800 overflow-hidden">
+                                <div id="confidenceBar" class="h-full rounded-full transition-all duration-700 ease-out bg-indigo-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Class Probability Breakdown -->
+                        <div class="pt-3 border-t border-slate-800/80 space-y-2.5 mono text-xs">
+                            <div class="flex justify-between text-slate-400">
+                                <span>P(Real | Image):</span>
+                                <span id="probReal" class="text-slate-200">--</span>
+                            </div>
+                            <div class="flex justify-between text-slate-400">
+                                <span>P(Synthetic | Image):</span>
+                                <span id="probFake" class="text-slate-200">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deep Learning Specs / Pipeline Info Card -->
+                <div class="bg-slate-900/50 border border-slate-800/70 rounded-2xl p-5 text-xs mono text-slate-400 space-y-2.5">
+                    <h3 class="text-slate-300 font-semibold uppercase tracking-wider text-[11px] mb-2 flex items-center gap-2">
+                        <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Model Telemetry
+                    </h3>
+                    <div class="flex justify-between">
+                        <span>Architecture:</span>
+                        <span class="text-slate-200">EfficientNet-B0</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Input Tensor:</span>
+                        <span class="text-slate-200">3 × 224 × 224</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Weight Size:</span>
+                        <span class="text-slate-200">~18 MB</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Normalization:</span>
+                        <span class="text-slate-200">ImageNet (μ, σ)</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="py-4 border-t border-slate-800/60 text-center mono text-xs text-slate-500">
+        AI Face Forensics Pipeline &bull; Academic Research Submission
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
